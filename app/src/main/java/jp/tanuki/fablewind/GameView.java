@@ -24,7 +24,7 @@ public final class GameView extends FrameLayout {
     private volatile long renderedFrames;
     private boolean active;
     private static final String PLAY="play",CRAFT="craft",BAG="bag",MAP="map",HELP="help";
-    private String menu=PLAY;private int recipeCategory,recipePage,selectedRecipe,selectedWarp;
+    private volatile String menu=PLAY;private int recipeCategory,recipePage,selectedRecipe,selectedWarp;
     public GameView(Context context){
         super(context);
         saveFile=new AtomicFile(new File(context.getFilesDir(),"fablewind-survival-v1.bin"));
@@ -48,6 +48,7 @@ public final class GameView extends FrameLayout {
         surface.setRenderer(renderer);addView(surface,new LayoutParams(-1,-1));hud=new Hud(context);addView(hud,new LayoutParams(-1,-1));
         setFocusableInTouchMode(true);
     }
+    String testMenu(){return menu;}
     SurvivalGame.Snapshot testSnapshot(){return snapshot;}
     long testFrames(){return renderedFrames;}
     SurvivalGame testGame(){return game;}

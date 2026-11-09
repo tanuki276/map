@@ -36,9 +36,9 @@ public final class SmokeInstrumentation extends Instrumentation {
             awaitScene(68,22,null);capture("night");
             // Real touch events open and close the crafting modal.
             float scale=Math.min(view.getWidth()/960f,view.getHeight()/540f),sw=view.getWidth()/scale;
-            tap((sw-275)*scale,35*scale);SystemClock.sleep(300);capture("craft");
+            tap((sw-275)*scale,35*scale);SystemClock.sleep(300);check(view.testMenu().equals("craft"),"craft modal opens");capture("craft");
             tap((sw-100)*scale,55*scale);SystemClock.sleep(100);
-            tap((sw-100)*scale,35*scale);SystemClock.sleep(300);capture("map");
+            tap((sw-100)*scale,35*scale);SystemClock.sleep(300);check(view.testMenu().equals("map"),"map modal opens");capture("map");
             check(view.testError().isEmpty(),"final GL error: "+view.testError());
             result.putString("result","PASS");result.putString("models",String.valueOf(view.testModels()));
             result.putString("coverage","EGL shader + 54 GLBs + 7 regions + interior + night + crafting/map touch + screenshots");
@@ -66,6 +66,13 @@ public final class SmokeInstrumentation extends Instrumentation {
         try(FileOutputStream out=new FileOutputStream(new File(dir,name+".png"))){check(b.compress(Bitmap.CompressFormat.PNG,100,out),"PNG capture");}
         Bitmap small=Bitmap.createScaledBitmap(b,960,540,true);
         try(FileOutputStream out=new FileOutputStream(new File(dir,name+".jpg"))){small.compress(Bitmap.CompressFormat.JPEG,78,out);}
+        int colored=0,total=0;
+        for(int y=b.getHeight()/4;y<b.getHeight()*3/5;y+=Math.max(1,b.getHeight()/25))
+            for(int x=b.getWidth()*3/10;x<b.getWidth()*7/10;x+=Math.max(1,b.getWidth()/25)){
+                int pixel=b.getPixel(x,y);total++;
+                if(android.graphics.Color.red(pixel)<235 || android.graphics.Color.green(pixel)<235 || android.graphics.Color.blue(pixel)<235)colored++;
+            }
         if(small!=b)small.recycle();b.recycle();
+        check(colored>total/2,"playfield is visible, not a blank surface: "+name+" colored="+colored+"/"+total);
     }
 }
