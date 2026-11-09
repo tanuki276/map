@@ -37,9 +37,9 @@ public final class SmokeInstrumentation extends Instrumentation {
             awaitScene(68,22,null);capture("night");
             // Real touch events open and close the crafting modal.
             float scale=Math.min(view.getWidth()/960f,view.getHeight()/540f),sw=view.getWidth()/scale;
-            tap((sw-275)*scale,35*scale);SystemClock.sleep(300);check(view.testMenu().equals("craft"),"craft modal opens");capture("craft");
+            tap((sw-275)*scale,35*scale);view.testSyncFrame();SystemClock.sleep(300);check(view.testMenu().equals("craft"),"craft modal opens");capture("craft");
             tap((sw-100)*scale,55*scale);SystemClock.sleep(100);
-            tap((sw-100)*scale,35*scale);SystemClock.sleep(300);check(view.testMenu().equals("map"),"map modal opens");capture("map");
+            tap((sw-100)*scale,35*scale);view.testSyncFrame();SystemClock.sleep(300);check(view.testMenu().equals("map"),"map modal opens");capture("map");
             check(view.testError().isEmpty(),"final GL error: "+view.testError());
             result.putString("result","PASS");result.putString("models",String.valueOf(view.testModels()));
             result.putString("coverage","EGL shader + 54 GLBs + 7 regions + interior + night + crafting/map touch + screenshots");

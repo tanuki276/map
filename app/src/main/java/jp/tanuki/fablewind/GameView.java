@@ -48,7 +48,7 @@ public final class GameView extends FrameLayout {
             public void ready(SurvivalGame.Snapshot s,String error,int models,int tris){snapshot=s;renderError=error;loadedModels=models;triangles=tris;renderedFrames++;}
             public void save(){saveGame();}
         });
-        surface.setRenderer(renderer);addView(surface,new LayoutParams(-1,-1));hud=new Hud(context);addView(hud,new LayoutParams(-1,-1));
+        surface.setRenderer(renderer);surface.setRenderMode(GLSurfaceView.RENDERMODE_WHEN_DIRTY);addView(surface,new LayoutParams(-1,-1));hud=new Hud(context);addView(hud,new LayoutParams(-1,-1));
         setFocusableInTouchMode(true);
     }
 
@@ -66,7 +66,7 @@ public final class GameView extends FrameLayout {
     int testModels(){return loadedModels;}
     String testError(){return renderError;}
     public void pause(){active=false;hud.removeCallbacks(hudTicker);input.clear();synchronized(game){game.paused=true;}saveGame();surface.onPause();}
-    public void resume(){active=true;input.clear();synchronized(game){game.paused=false;}surface.onResume();hud.removeCallbacks(hudTicker);hud.post(hudTicker);hud.invalidate();}
+    public void resume(){active=true;input.clear();synchronized(game){game.paused=false;}surface.onResume();surface.requestRender();hud.removeCallbacks(hudTicker);hud.post(hudTicker);hud.invalidate();}
     private synchronized void saveGame(){
         if(saveError.startsWith("セーブを保護"))return;
         FileOutputStream out=null;
@@ -118,7 +118,7 @@ public final class GameView extends FrameLayout {
             if(!saveError.isEmpty())text(c,saveError,20,sh-12,11,0xffffb89d,false);
             if(!renderError.isEmpty()){panel(c,25,145,sw-25,sh-30,0xf02c3036);text(c,renderError,45,185,15,0xffffb9a1,false);}
             if(s.fade>0){p.setColor(Color.argb((int)(255*s.fade),18,30,39));c.drawRect(0,0,sw,sh,p);}
-            hudSnapshot=s;c.restore();
+            hudSnapshot=s;c.restore();if(active)surface.requestRender();
         }
         private void drawControls(Canvas c,SurvivalGame.Snapshot s){
             float jx=103,jy=sh-95;p.setColor(0x55516b65);c.drawCircle(jx,jy,65,p);p.setColor(0x55d1d5b2);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(2);c.drawCircle(jx,jy,63,p);p.setStyle(Paint.Style.FILL);p.setColor(0xcce6dfbd);c.drawCircle(jx+joyX*42,jy+joyY*42,24,p);
