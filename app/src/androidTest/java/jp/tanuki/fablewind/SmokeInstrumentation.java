@@ -20,9 +20,16 @@ public final class SmokeInstrumentation extends Instrumentation {
             View root=activity.findViewById(android.R.id.content);
             view=(GameView)((android.view.ViewGroup)root).getChildAt(0);
             runOnMainSync(()->((android.opengl.GLSurfaceView)view.getChildAt(0)).getHolder().setFixedSize(960,540));
+            int expectedModels;
+            try(InputStream in=getTargetContext().getAssets().open("models/manifest.json")){
+                ByteArrayOutputStream bytes=new ByteArrayOutputStream();byte[] chunk=new byte[4096];int n;
+                while((n=in.read(chunk))!=-1)bytes.write(chunk,0,n);
+                expectedModels=Json.obj(Json.obj(Json.parse(bytes.toString("UTF-8"))).get("assets")).size();
+            }
+            check(expectedModels>=66,"manifest includes riverworks kit");
             long timeout=SystemClock.uptimeMillis()+60000;
-            while(view.testModels()<54 && view.testError().isEmpty() && SystemClock.uptimeMillis()<timeout)SystemClock.sleep(250);
-            check(view.testModels()==54,"load all 54 GLB models: "+view.testError());check(view.testError().isEmpty(),view.testError());
+            while(view.testModels()<expectedModels && view.testError().isEmpty() && SystemClock.uptimeMillis()<timeout)SystemClock.sleep(250);
+            check(view.testModels()==expectedModels,"load all "+expectedModels+" GLB models: "+view.testError());check(view.testError().isEmpty(),view.testError());
             check(view.getWidth()>view.getHeight(),"landscape viewport");
             SurvivalGame game=view.testGame();
             for(int i=0;i<7;i++){
@@ -42,7 +49,7 @@ public final class SmokeInstrumentation extends Instrumentation {
             tap((sw-100)*scale,35*scale);view.testSyncFrame();SystemClock.sleep(300);check(view.testMenu().equals("map"),"map modal opens");capture("map");
             check(view.testError().isEmpty(),"final GL error: "+view.testError());
             result.putString("result","PASS");result.putString("models",String.valueOf(view.testModels()));
-            result.putString("coverage","EGL shader + 54 GLBs + 7 regions + interior + night + crafting/map touch + screenshots");
+            result.putString("coverage","EGL shader + "+expectedModels+" GLBs + 7 regions + interior + night + crafting/map touch + screenshots");
             finish(Activity.RESULT_OK,result);
         }catch(Throwable e){
             for(java.util.Map.Entry<Thread,StackTraceElement[]> entry:Thread.getAllStackTraces().entrySet())

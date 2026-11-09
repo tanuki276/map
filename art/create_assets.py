@@ -2,7 +2,7 @@
 All geometry, atlas UVs and material choices are authored here in meters. Blender Z-up;
 glTF export is Y-up. The complete editable source is saved before delivery export.
 """
-import bpy, bmesh, math, random, json, os
+import bpy, bmesh, math, random, json, os, sys
 from pathlib import Path
 from mathutils import Vector
 ROOT=Path(__file__).resolve().parents[1]
@@ -494,6 +494,10 @@ def flame(m):
     for x,y,h,r in [(0,0,1.1,.24),(.18,.05,.65,.16),(-.15,.04,.8,.18)]:
         m.lathe((x,y,0),[(r*.4,0),(r,.2),(r*.55,h*.6),(0,h)],16,16)
 model('flame',flame)
+# Original riverworks kit shares the same native decoder/material contract.
+sys.path.insert(0, str(ROOT/'art'))
+from river_assets import register
+river_names=register(model)
 # Preserve the authored meshes/materials in a conventional, self-contained native scene.
 for name,objs in models.items():
     col=bpy.data.collections.new(name);bpy.context.scene.collection.children.link(col)
@@ -502,8 +506,11 @@ for name,objs in models.items():
         col.objects.link(obj)
     col['asset_role']='Fablewind original game model; meter scale; atlas materials'
 bpy.ops.wm.save_as_mainfile(filepath=str(ROOT/'art/fablewind-assets.blend'),compress=True)
-manifest={}
+incremental='--river-only' in sys.argv
+manifest=json.loads((OUT/'manifest.json').read_text())['assets'] if incremental else {}
+export_names=river_names if incremental else set(models)
 for name,objs in models.items():
+    if name not in export_names:continue
     bpy.ops.object.select_all(action='DESELECT')
     for obj in objs:obj.select_set(True)
     bpy.context.view_layer.objects.active=objs[0]

@@ -8,3 +8,6 @@ local.properties
 
 *.blend1
 qa/
+
+__pycache__/
+art/previews/*.png

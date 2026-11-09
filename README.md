@@ -1,6 +1,6 @@
 # Fablewind — 風の国の旅人 · 3D Survival
 
-童話の中を旅して、素材を集め、火を起こし、料理し、自分の拠点を建てる Android 向けのオフライン3D探索ゲームです。**54種類のオリジナルGLBモデル**を OpenGL ES で読み込みます。地形・建物・植物・旅人・生き物は3D、Canvasは操作画面だけに使います。
+童話の中を旅して、素材を集め、火を起こし、料理し、自分の拠点を建てる Android 向けのオフライン3D探索ゲームです。**66種類のオリジナルGLBモデル**を OpenGL ES で読み込みます。地形・建物・植物・旅人・生き物は3D、Canvasは操作画面だけに使います。
 
 ## インストールと現在の版
 
@@ -62,7 +62,9 @@
 
 `app/src/main/assets/models/` にGLBと三角形数・寸法・部品数のマニフェスト、`art/fablewind-assets.blend` に編集可能なBlender原本を収録しています。瓦、窓枠、鎧戸、扉の板、根、帽子の羽根、道具などを実際のメッシュとして作っています。旅人の手足と尻尾は名前付きの部品として動かします。
 
-生成元: `art/create_assets.py` / `tools/make_atlas.py`。他作品のモデルやテクスチャは使用していません。[世界観の調査・地域設計・描画の範囲](art/DESIGN.md) も参照してください。
+追加の川仕事GLB12種: 板橋、渡し舟、水位計、水門、水車、桟橋、道標、荷車、魚干し台、天幕、測量小屋、道程標。6種を村・街道・湿原の景観に配置しています。舟の操縦、水門の修理、水車の稼働はまだ実装していません。[追加素材の一覧と寸法](art/RIVERWORKS.md) / [GLB読戻しプレビュー](art/previews/riverworks-sheet.jpg)。
+
+生成元: `art/create_assets.py` / `art/river_assets.py` / `tools/make_atlas.py`。他作品のモデルやテクスチャは使用していません。[世界観の調査・地域設計・描画の範囲](art/DESIGN.md) も参照してください。
 
 ```sh
 python tools/make_atlas.py  # Python + numpy + Pillow
@@ -78,6 +80,6 @@ sh scripts/check-world.sh
 gradle assembleDebug assembleDebugAndroidTest
 ```
 
-CIではワープ、採取、製作の原子性、入退室、水くみ、料理、戦闘、夜の出現、セーブ復元とGLBデコーダーを確認します。さらにAndroidエミュレーターの実際のEGL画面で54モデル・7地域・屋内・夜・製作画面・地図を確認し、**Fablewind-3D-Android-QA** に画像を保存します。
+CIではワープ、採取、製作の原子性、入退室、水くみ、料理、戦闘、夜の出現、セーブ復元とGLBデコーダーを確認します。さらにAndroidエミュレーターの実際のEGL画面で66モデル・7地域・屋内・夜・製作画面・地図を確認し、**Fablewind-3D-Android-QA** に画像を保存します。
 
 端末ごとの実機性能は未検証です。描画はオリジナルの軽量3D実装で、AAA作品との画質同等性、物理破壊、自由な地形掘削、建築エディター、豊富な会話・ストーリーは今回の実装範囲に含みません。

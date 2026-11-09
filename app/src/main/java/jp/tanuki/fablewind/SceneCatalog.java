@@ -20,7 +20,14 @@ public final class SceneCatalog {
         new Feature("observatory","星読みの天文台",72,14,.9f,2.3f,true),
         new Feature("pumpkin_house","琥珀の菓子屋",-67,1,.8f,1.8f,true),
         new Feature("market","旅商人の露店",-5,2,.8f,.6f,false),
-        new Feature("shrine","七つ星の祭壇",-43,-29,.65f,.5f,false)
+        new Feature("shrine","七つ星の祭壇",-43,-29,.65f,.5f,false),
+        // Riverworks props are scenery in this first asset pass; no repair/boat mechanics yet.
+        new Feature("survey_shelter","川筋測量所",-7,-6,.7f,1.4f,false),
+        new Feature("route_post","河道の道標",-6,-2,.75f,.45f,false),
+        new Feature("handcart","運び屋の荷車",-7,3,.7f,1.1f,false),
+        new Feature("canvas_tent","測量隊の天幕",8,6,.8f,1.4f,false),
+        new Feature("mile_stone","二番川標",18,24,.75f,.4f,false),
+        new Feature("fish_rack","渡守の魚干し台",-42,36,.8f,.9f,false)
     ));
     public static String model(World.Tile tile) {
         switch(tile.object) {
