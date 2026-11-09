@@ -45,11 +45,11 @@ public final class SmokeInstrumentation extends Instrumentation {
             finish(Activity.RESULT_OK,result);
         }catch(Throwable e){android.util.Log.e("FablewindSmoke","FAIL",e);result.putString("result","FAIL");result.putString("error",e.toString());finish(Activity.RESULT_CANCELED,result);}
     }
-    private void awaitScene(float x,float z,String interior){
+    private void awaitScene(float x,float z,String interior)throws InterruptedException{
         long frame=view.testFrames()+2,deadline=SystemClock.uptimeMillis()+45000;
         while(SystemClock.uptimeMillis()<deadline){
-            SurvivalGame.Snapshot s=view.testSnapshot();
-            if(view.testFrames()>=frame && s!=null && s.x==x && s.z==z && java.util.Objects.equals(s.interior,interior)){waitForIdleSync();return;}
+            SurvivalGame.Snapshot s=view.testSnapshot(),h=view.testHudSnapshot();
+            if(view.testFrames()>=frame && s!=null && s.x==x && s.z==z && java.util.Objects.equals(s.interior,interior) && h!=null && h.x==x && h.z==z && java.util.Objects.equals(h.interior,interior)){view.testSyncFrame();waitForIdleSync();SystemClock.sleep(200);return;}
             SystemClock.sleep(100);
         }
         throw new AssertionError("Timed out waiting for rendered scene "+x+","+z);
@@ -57,6 +57,7 @@ public final class SmokeInstrumentation extends Instrumentation {
     private void tap(float x,float y){
         int[] origin=new int[2];view.getLocationOnScreen(origin);x+=origin[0];y+=origin[1];
         long now=SystemClock.uptimeMillis();MotionEvent down=MotionEvent.obtain(now,now,0,x,y,0),up=MotionEvent.obtain(now,now+50,1,x,y,0);
+        down.setSource(InputDevice.SOURCE_TOUCHSCREEN);up.setSource(InputDevice.SOURCE_TOUCHSCREEN);
         check(getUiAutomation().injectInputEvent(down,true),"touch down");check(getUiAutomation().injectInputEvent(up,true),"touch up");
         down.recycle();up.recycle();waitForIdleSync();
     }

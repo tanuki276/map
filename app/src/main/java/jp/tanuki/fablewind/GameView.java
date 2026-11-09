@@ -18,7 +18,7 @@ public final class GameView extends FrameLayout {
     private final SurvivalGame.Input input=new SurvivalGame.Input();
     private final SceneRenderer renderer;
     private final AtomicFile saveFile;
-    private volatile SurvivalGame.Snapshot snapshot;
+    private volatile SurvivalGame.Snapshot snapshot,hudSnapshot;
     private volatile String renderError="",saveError="";
     private volatile int loadedModels,triangles;
     private volatile long renderedFrames;
@@ -42,11 +42,18 @@ public final class GameView extends FrameLayout {
         loaded.ensureSafeSpawn();game=loaded;snapshot=game.snapshot();
         surface=new GLSurfaceView(context);surface.setEGLContextClientVersion(2);surface.setEGLConfigChooser(8,8,8,0,16,0);surface.setPreserveEGLContextOnPause(true);
         renderer=new SceneRenderer(context,game,input,new SceneRenderer.Listener(){
-            public void ready(SurvivalGame.Snapshot s,String error,int models,int tris){snapshot=s;renderError=error;loadedModels=models;triangles=tris;renderedFrames++;}
+            public void ready(SurvivalGame.Snapshot s,String error,int models,int tris){snapshot=s;renderError=error;loadedModels=models;triangles=tris;renderedFrames++;refreshHud();}
             public void save(){saveGame();}
         });
         surface.setRenderer(renderer);addView(surface,new LayoutParams(-1,-1));hud=new Hud(context);addView(hud,new LayoutParams(-1,-1));
         setFocusableInTouchMode(true);
+    }
+    private void refreshHud(){if(hud!=null)hud.postInvalidateOnAnimation();}
+    SurvivalGame.Snapshot testHudSnapshot(){return hudSnapshot;}
+    void testSyncFrame()throws InterruptedException{
+        java.util.concurrent.CountDownLatch complete=new java.util.concurrent.CountDownLatch(1);
+        surface.queueEvent(()->{android.opengl.GLES20.glFinish();complete.countDown();});
+        if(!complete.await(15,java.util.concurrent.TimeUnit.SECONDS))throw new AssertionError("GPU completion timeout");
     }
     String testMenu(){return menu;}
     SurvivalGame.Snapshot testSnapshot(){return snapshot;}
@@ -107,7 +114,7 @@ public final class GameView extends FrameLayout {
             if(!saveError.isEmpty())text(c,saveError,20,sh-12,11,0xffffb89d,false);
             if(!renderError.isEmpty()){panel(c,25,145,sw-25,sh-30,0xf02c3036);text(c,renderError,45,185,15,0xffffb9a1,false);}
             if(s.fade>0){p.setColor(Color.argb((int)(255*s.fade),18,30,39));c.drawRect(0,0,sw,sh,p);}
-            c.restore();if(active)postInvalidateOnAnimation();
+            hudSnapshot=s;c.restore();if(active)postInvalidateOnAnimation();
         }
         private void drawControls(Canvas c,SurvivalGame.Snapshot s){
             float jx=103,jy=sh-95;p.setColor(0x55516b65);c.drawCircle(jx,jy,65,p);p.setColor(0x55d1d5b2);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(2);c.drawCircle(jx,jy,63,p);p.setStyle(Paint.Style.FILL);p.setColor(0xcce6dfbd);c.drawCircle(jx+joyX*42,jy+joyY*42,24,p);
