@@ -23,6 +23,9 @@ public final class GameView extends FrameLayout {
     private volatile int loadedModels,triangles;
     private volatile long renderedFrames;
     private boolean active;
+    private final Runnable hudTicker=new Runnable(){public void run(){
+        if(active){hud.invalidate();hud.postDelayed(this,33);}
+    }};
     private static final String PLAY="play",CRAFT="craft",BAG="bag",MAP="map",HELP="help";
     private volatile String menu=PLAY;private int recipeCategory,recipePage,selectedRecipe,selectedWarp;
     public GameView(Context context){
@@ -42,27 +45,28 @@ public final class GameView extends FrameLayout {
         loaded.ensureSafeSpawn();game=loaded;snapshot=game.snapshot();
         surface=new GLSurfaceView(context);surface.setEGLContextClientVersion(2);surface.setEGLConfigChooser(8,8,8,0,16,0);surface.setPreserveEGLContextOnPause(true);
         renderer=new SceneRenderer(context,game,input,new SceneRenderer.Listener(){
-            public void ready(SurvivalGame.Snapshot s,String error,int models,int tris){snapshot=s;renderError=error;loadedModels=models;triangles=tris;renderedFrames++;refreshHud();}
+            public void ready(SurvivalGame.Snapshot s,String error,int models,int tris){snapshot=s;renderError=error;loadedModels=models;triangles=tris;renderedFrames++;}
             public void save(){saveGame();}
         });
         surface.setRenderer(renderer);addView(surface,new LayoutParams(-1,-1));hud=new Hud(context);addView(hud,new LayoutParams(-1,-1));
         setFocusableInTouchMode(true);
     }
-    private void refreshHud(){if(hud!=null)hud.postInvalidateOnAnimation();}
+
     SurvivalGame.Snapshot testHudSnapshot(){return hudSnapshot;}
     void testSyncFrame()throws InterruptedException{
         java.util.concurrent.CountDownLatch complete=new java.util.concurrent.CountDownLatch(1);
         surface.queueEvent(()->{android.opengl.GLES20.glFinish();complete.countDown();});
         if(!complete.await(15,java.util.concurrent.TimeUnit.SECONDS))throw new AssertionError("GPU completion timeout");
     }
+    String testVisibility(){return "active="+active+" shown="+hud.isShown()+" attached="+hud.isAttachedToWindow()+" window="+hud.getWindowVisibility()+" focus="+hasWindowFocus();}
     String testMenu(){return menu;}
     SurvivalGame.Snapshot testSnapshot(){return snapshot;}
     long testFrames(){return renderedFrames;}
     SurvivalGame testGame(){return game;}
     int testModels(){return loadedModels;}
     String testError(){return renderError;}
-    public void pause(){active=false;input.clear();synchronized(game){game.paused=true;}saveGame();surface.onPause();}
-    public void resume(){active=true;input.clear();synchronized(game){game.paused=false;}surface.onResume();hud.invalidate();}
+    public void pause(){active=false;hud.removeCallbacks(hudTicker);input.clear();synchronized(game){game.paused=true;}saveGame();surface.onPause();}
+    public void resume(){active=true;input.clear();synchronized(game){game.paused=false;}surface.onResume();hud.removeCallbacks(hudTicker);hud.post(hudTicker);hud.invalidate();}
     private synchronized void saveGame(){
         if(saveError.startsWith("セーブを保護"))return;
         FileOutputStream out=null;
@@ -87,7 +91,7 @@ public final class GameView extends FrameLayout {
         private final Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);private final Typeface serif=Typeface.create("serif",Typeface.BOLD),sans=Typeface.create("sans-serif",Typeface.NORMAL);
         private float scale=1,sw=960,sh=540,joyX,joyY,cameraX,cameraY;private int stick=-1,run=-1,attack=-1,look=-1;
         private Bitmap mapImage;private final RectF mapRect=new RectF();
-        Hud(Context context){super(context);setFocusable(true);}
+        Hud(Context context){super(context);setFocusable(true);setLayerType(View.LAYER_TYPE_SOFTWARE,null);}
         void resetPointers(){stick=run=attack=look=-1;joyX=joyY=0;}
         private void text(Canvas c,String value,float x,float y,float size,int color,boolean fancy){p.setColor(color);p.setStyle(Paint.Style.FILL);p.setTypeface(fancy?serif:sans);p.setTextSize(size);c.drawText(value,x,y,p);}
         private void panel(Canvas c,float l,float t,float r,float b,int color){p.setColor(color);p.setStyle(Paint.Style.FILL);c.drawRoundRect(l,t,r,b,12,12,p);p.setColor(0x7798b2a1);p.setStrokeWidth(1);p.setStyle(Paint.Style.STROKE);c.drawRoundRect(l,t,r,b,12,12,p);p.setStyle(Paint.Style.FILL);}
@@ -114,7 +118,7 @@ public final class GameView extends FrameLayout {
             if(!saveError.isEmpty())text(c,saveError,20,sh-12,11,0xffffb89d,false);
             if(!renderError.isEmpty()){panel(c,25,145,sw-25,sh-30,0xf02c3036);text(c,renderError,45,185,15,0xffffb9a1,false);}
             if(s.fade>0){p.setColor(Color.argb((int)(255*s.fade),18,30,39));c.drawRect(0,0,sw,sh,p);}
-            hudSnapshot=s;c.restore();if(active)postInvalidateOnAnimation();
+            hudSnapshot=s;c.restore();
         }
         private void drawControls(Canvas c,SurvivalGame.Snapshot s){
             float jx=103,jy=sh-95;p.setColor(0x55516b65);c.drawCircle(jx,jy,65,p);p.setColor(0x55d1d5b2);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(2);c.drawCircle(jx,jy,63,p);p.setStyle(Paint.Style.FILL);p.setColor(0xcce6dfbd);c.drawCircle(jx+joyX*42,jy+joyY*42,24,p);

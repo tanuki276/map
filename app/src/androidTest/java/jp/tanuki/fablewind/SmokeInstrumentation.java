@@ -19,6 +19,7 @@ public final class SmokeInstrumentation extends Instrumentation {
             activity=startActivitySync(intent);waitForIdleSync();
             View root=activity.findViewById(android.R.id.content);
             view=(GameView)((android.view.ViewGroup)root).getChildAt(0);
+            runOnMainSync(()->((android.opengl.GLSurfaceView)view.getChildAt(0)).getHolder().setFixedSize(960,540));
             long timeout=SystemClock.uptimeMillis()+60000;
             while(view.testModels()<54 && view.testError().isEmpty() && SystemClock.uptimeMillis()<timeout)SystemClock.sleep(250);
             check(view.testModels()==54,"load all 54 GLB models: "+view.testError());check(view.testError().isEmpty(),view.testError());
@@ -59,7 +60,7 @@ public final class SmokeInstrumentation extends Instrumentation {
         SurvivalGame.Snapshot s=view.testSnapshot(),h=view.testHudSnapshot();
         throw new AssertionError("Timed out scene "+x+","+z+" frames="+view.testFrames()+
                 " GL="+(s==null?"null":s.x+","+s.z+","+s.interior)+
-                " HUD="+(h==null?"null":h.x+","+h.z+","+h.interior)+" error="+view.testError());
+                " HUD="+(h==null?"null":h.x+","+h.z+","+h.interior)+" error="+view.testError()+" "+view.testVisibility());
     }
     private void tap(float x,float y){
         int[] origin=new int[2];view.getLocationOnScreen(origin);x+=origin[0];y+=origin[1];
