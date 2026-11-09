@@ -31,6 +31,10 @@ public final class GameView extends View {
     private int bigX = Integer.MIN_VALUE, bigY = Integer.MIN_VALUE;
     private float saveCountdown;
     private String lastPlace = "";
+    private final WarpTravel travel = new WarpTravel();
+    private int selectedWarp;
+    private float arrivalNotice;
+    private final RectF mapFrame = new RectF();
 
     public GameView(Context context) {
         super(context);
@@ -39,13 +43,14 @@ public final class GameView extends View {
         playerY = saves.getFloat("y", 0);
         cameraX = playerX;
         cameraY = playerY;
-        zoom = saves.getFloat("zoom", 1f);
+        zoom = clamp(saves.getFloat("zoom", 1f), .62f, 1.55f);
         clock = saves.getFloat("clock", 144);
         setFocusable(true);
     }
 
     public void pause() {
         paused = true;
+        clearInput();
         save();
     }
     public void resume() {
@@ -90,25 +95,44 @@ public final class GameView extends View {
         }
         int minX=(int)Math.floor(xMin)-8, maxX=(int)Math.ceil(xMax)+8;
         int minY=(int)Math.floor(yMin)-8, maxY=(int)Math.ceil(yMax)+8;
-        int playerLayer = (int)Math.floor(playerX+playerY)+2;
+        int playerLayer = (int)Math.floor(playerX+playerY);
         boolean playerDrawn = false;
-        for (int sum=minX+minY; sum<=maxX+maxY; sum++) {
-            int from = Math.max(minX,sum-maxY);
-            int to = Math.min(maxX,sum-minY);
-            for (int x=from;x<=to;x++) {
-                int y=sum-x;
-                float screenX=centerX+(x-y-cameraX+cameraY)*w;
-                float approxY=centerY+(x+y-cameraX-cameraY)*h;
-                if(screenX < -220*zoom || screenX > width+220*zoom ||
-                   approxY < -250*zoom || approxY > height+210*zoom) continue;
-                World.Tile tile=world.tile(x,y);
-                float screenY=approxY-(tile.height-focusHeight)*groundLift;
-                Art.ground(c,p,path,tile,screenX,screenY,w,h);
-                Art.object(c,p,path,tile,screenX,screenY,w,clock);
-            }
-            if (!playerDrawn && sum>=playerLayer) {
-                drawPlayer(c,w,h,groundLift,focusHeight,centerX,centerY);
-                playerDrawn = true;
+        // Terrain first; props and traveler then share one painter's depth order.
+        // Neighboring tiles reuse exactly the same averaged vertex heights.
+        for (int pass=0;pass<2;pass++) {
+            for (int sum=minX+minY; sum<=maxX+maxY; sum++) {
+                int from = Math.max(minX,sum-maxY), to = Math.min(maxX,sum-minY);
+                for (int x=from;x<=to;x++) {
+                    int y=sum-x;
+                    float screenX=centerX+(x-y-cameraX+cameraY)*w;
+                    float approxY=centerY+(x+y-cameraX-cameraY)*h;
+                    if(screenX < -230*zoom || screenX > width+230*zoom ||
+                            approxY < -250*zoom || approxY > height+350*zoom) continue;
+                    World.Tile tile=world.tile(x,y);
+                    float screenY=approxY-(tile.height-focusHeight)*groundLift;
+                    if(pass==0) {
+                        Art.ground(c,p,path,tile,screenX,screenY,w,h,
+                                approxY-h-(vertexHeight(x,y)-focusHeight)*groundLift,
+                                approxY-(vertexHeight(x+1,y)-focusHeight)*groundLift,
+                                approxY+h-(vertexHeight(x+1,y+1)-focusHeight)*groundLift,
+                                approxY-(vertexHeight(x,y+1)-focusHeight)*groundLift,clock);
+                    } else {
+                        // Fade nearby foreground canopies so the traveler stays visible.
+                        float px=centerX+(playerX-playerY-cameraX+cameraY)*w;
+                        float py=centerY+(playerX+playerY-cameraX-cameraY)*h;
+                        boolean canopy=tile.object==World.TREE || tile.object==World.GIANT_TREE;
+                        boolean obscure=canopy && sum>playerLayer && Math.abs(screenX-px)<50*zoom
+                                && screenY>py && screenY-py<150*zoom;
+                        int layer=obscure?c.saveLayerAlpha(screenX-180*zoom,screenY-320*zoom,
+                                screenX+180*zoom,screenY+20*zoom,125):0;
+                        Art.object(c,p,path,tile,screenX,screenY,w,clock);
+                        if(obscure)c.restoreToCount(layer);
+                    }
+                }
+                if (pass==1 && !playerDrawn && sum>=playerLayer) {
+                    drawPlayer(c,w,h,groundLift,focusHeight,centerX,centerY);
+                    playerDrawn = true;
+                }
             }
         }
         if (!playerDrawn) drawPlayer(c,w,h,groundLift,focusHeight,centerX,centerY);
@@ -120,15 +144,28 @@ public final class GameView extends View {
             p.setColor(Color.argb(darkness,18,28,63));
             c.drawRect(0,0,width,height,p);
         }
+        drawAtmosphere(c,width,height,sun);
         drawFireflies(c,width,height,sun);
         drawHud(c,width,height);
         if (mapOpen) drawLargeMap(c,width,height);
+        if(travel.active()) {
+            p.setColor(Color.argb((int)(travel.opacity()*255),27,42,48));
+            c.drawRect(0,0,width,height,p);
+        }
         if (!paused) postInvalidateOnAnimation();
     }
 
     private void update(float dt) {
-        clock+=dt;
-        if (!mapOpen && (Math.abs(joystickX)+Math.abs(joystickY)>.04f)) {
+        clock=(clock+dt)%700;
+        arrivalNotice=Math.max(0,arrivalNotice-dt);
+        WarpPoint arrival=travel.update(dt);
+        if(arrival!=null) {
+            playerX=cameraX=arrival.x; playerY=cameraY=arrival.y;
+            miniX=miniY=Integer.MIN_VALUE;
+            arrivalNotice=3.5f;
+            save();
+        }
+        if (!mapOpen && !travel.active() && (Math.abs(joystickX)+Math.abs(joystickY)>.04f)) {
             float mx=joystickX*.65f+joystickY*1.23f;
             float my=-joystickX*.65f+joystickY*1.23f;
             float len=(float)Math.hypot(mx,my);
@@ -146,6 +183,46 @@ public final class GameView extends View {
         if((saveCountdown+=dt)>12) {
             saveCountdown=0;
             save();
+        }
+    }
+
+    private float vertexHeight(int x,int y) {
+        return (world.tile(x,y).height+world.tile(x-1,y).height+
+                world.tile(x,y-1).height+world.tile(x-1,y-1).height)*.25f;
+    }
+
+    private void clearInput() {
+        joystickX=joystickY=0; sprint=false; stickPointer=runPointer=-1;
+    }
+
+    private void openMap() {
+        clearInput();
+        int nearby=WarpPoint.nearest(playerX,playerY,5);
+        if(nearby>=0)selectedWarp=nearby;
+        mapOpen=true;
+    }
+
+    private void drawAtmosphere(Canvas c,int width,int height,double sun) {
+        // Soft depth haze and drifting mist, kept behind the legible HUD.
+        p.setShader(new android.graphics.LinearGradient(0,0,0,height*.65f,
+                0x60d7d7b9,0x00d7d7b9,android.graphics.Shader.TileMode.CLAMP));
+        c.drawRect(0,0,width,height,p);p.setShader(null);
+        int region=World.regionAt(playerX,playerY);
+        if(region==3 || region==5) {
+            for(int i=0;i<5;i++) {
+                float x=(float)((i*width*.31+clock*8)%(width*1.5))-width*.25f;
+                float y=height*(.2f+i*.14f);
+                p.setColor(region==3?0x14e1e6dc:0x0fc0e5d6);
+                c.drawOval(x,y,x+width*.55f,y+height*.11f,p);
+            }
+        }
+        if(region==6 || region==1) {
+            for(int i=0;i<16;i++) {
+                float x=(i*173+clock*15)%width;
+                float y=(i*97+clock*11)%height;
+                p.setColor(region==6?0xaaa96837:0x99d5989d);
+                c.drawOval(x,y,x+5,y+2,p);
+            }
         }
     }
 
@@ -212,6 +289,12 @@ public final class GameView extends View {
                 "X %+.0f    Y %+.0f",playerX,playerY);
         text(c,position,29,78,10,0xffc4d7d1,false);
 
+        panel(c,15,98,205,139,11);
+        text(c,"◇  ワープ · 旅の門",29,124,15,0xffffe4ad,true);
+        if(arrivalNotice>0) {
+            panel(c,sw*.5f-160,sh-58,sw*.5f+160,sh-18,12);
+            text(c,"✦  "+world.placeName(playerX,playerY)+" に到着",sw*.5f-138,sh-32,15,0xffffe4ad,true);
+        }
         drawMiniMap(c,sw-191,14,176,143);
         p.setColor(0xfff3e1c0);
         p.setTextSize(11);
@@ -247,8 +330,8 @@ public final class GameView extends View {
     }
 
     private void drawMiniMap(Canvas c,float left,float top,float width,float height) {
-        if(miniImage==null || Math.abs(miniX-Math.round(playerX))>10 ||
-                Math.abs(miniY-Math.round(playerY))>10) {
+        if(miniImage==null || Math.abs((long)miniX-Math.round(playerX))>10 ||
+                Math.abs((long)miniY-Math.round(playerY))>10) {
             miniX=Math.round(playerX);miniY=Math.round(playerY);
             if(miniImage!=null)miniImage.recycle();
             miniImage=Bitmap.createBitmap(72,56,Bitmap.Config.RGB_565);
@@ -267,59 +350,100 @@ public final class GameView extends View {
         c.drawBitmap(miniImage,null,
                 new RectF(left+7,top+8,left+width-7,top+height-8),p);
         p.setAlpha(255);
+        for(WarpPoint point:WarpPoint.ALL) {
+            float mx=left+width/2+(point.x-miniX)/216f*(width-14);
+            float my=top+height/2+(point.y-miniY)/168f*(height-16);
+            if(mx>left+8 && mx<left+width-8 && my>top+9 && my<top+height-9) {
+                p.setColor(point.color);c.drawCircle(mx,my,2.5f,p);
+            }
+        }
+        float playerMapX=left+width/2+(playerX-miniX)/216f*(width-14);
+        float playerMapY=top+height/2+(playerY-miniY)/168f*(height-16);
         p.setColor(0xfff2e6b9);
-        c.drawCircle(left+width/2,top+height/2,4,p);
+        c.drawCircle(playerMapX,playerMapY,4,p);
         p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(1.8f);
-        c.drawCircle(left+width/2,top+height/2,7,p);
+        c.drawCircle(playerMapX,playerMapY,7,p);
         p.setStyle(Paint.Style.FILL);
     }
 
     private void drawLargeMap(Canvas c,int width,int height) {
-        c.save();
-        c.scale(uiScale,uiScale);
+        c.save();c.scale(uiScale,uiScale);
         float sw=width/uiScale,sh=height/uiScale;
-        float left=sw*.12f,top=sh*.11f,right=sw*.88f,bottom=sh*.90f;
-        panel(c,left-16,top-14,right+16,bottom+15,17);
-        text(c,"旅人の地図",left+12,top+24,23,0xfff5dfa7,true);
-        text(c,"タップして閉じる  |  地形は歩くたびに広がる",left+12,top+45,11,0xffd4e6d8,false);
-        float mapTop=top+55,mapBottom=bottom-15;
-        if (bigImage==null || Math.abs(bigX-Math.round(playerX))>150 ||
-                Math.abs(bigY-Math.round(playerY))>150) {
-            bigX=Math.round(playerX);bigY=Math.round(playerY);
-            if(bigImage!=null)bigImage.recycle();
-            bigImage=Bitmap.createBitmap(128,72,Bitmap.Config.RGB_565);
+        p.setColor(0xdd192d32);c.drawRect(0,0,sw,sh,p);
+        panel(c,24,22,sw-24,sh-22,18);
+        text(c,"旅の門をめぐる地図",44,58,23,0xfff5dfa7,true);
+        text(c,"行き先を選び、ワープで次の物語へ。すべての門を自由に使えます。",
+                45,80,11,0xffc1d3c8,false);
+        panel(c,sw-73,34,sw-38,68,9);
+        text(c,"×",sw-64,58,23,0xfff5dfa7,false);
+        mapFrame.set(44,102,sw-353,sh-87);
+        if (bigImage==null) {
+            bigImage=Bitmap.createBitmap(160,112,Bitmap.Config.RGB_565);
             Canvas mc=new Canvas(bigImage);
-            for(int y=0;y<72;y++)
-                for(int x=0;x<128;x++) {
-                    World.Tile t=world.preview(bigX+(x-64)*22,bigY+(y-36)*22);
-                    p.setColor(Art.groundColor(t));
-                    mc.drawPoint(x,y,p);
-                }
+            p.setStyle(Paint.Style.FILL);p.setStrokeWidth(1);
+            for(int y=0;y<112;y++)for(int x=0;x<160;x++) {
+                World.Tile tile=world.preview(Math.round(-105+x*1.4f),Math.round(-68+y*1.4f));
+                p.setColor(tile.road?0xffc1ae83:Art.groundColor(tile));
+                mc.drawPoint(x,y,p);
+            }
         }
-        RectF frame=new RectF(left+5,mapTop,right-5,mapBottom);
-        p.setColor(Color.WHITE);p.setAlpha(255);p.setFilterBitmap(false);
-        c.drawBitmap(bigImage,null,frame,p);
-        float centerX=(frame.left+frame.right)*.5f;
-        float centerY=(frame.top+frame.bottom)*.5f;
-        // Exploration landmarks: only markers within this map window are visible.
-        marker(c,frame,0,0,0xfff7dfa9,"村");
-        marker(c,frame,42,-40,0xffe9ba8f,"城");
-        marker(c,frame,27,32,0xffe9ba8f,"風車");
-        marker(c,frame,-38,45,0xffe9ba8f,"灯台");
-        marker(c,frame,72,22,0xffe9ba8f,"遺跡");
-        p.setColor(0xfffcead6);
-        c.drawCircle(centerX+(playerX-bigX)/2816f*frame.width(),
-                     centerY+(playerY-bigY)/1584f*frame.height(),4,p);
-        text(c,"● あなた",left+9,bottom-1,11,0xfff4e4bf,false);
+        p.setColor(Color.WHITE);p.setAlpha(255);p.setFilterBitmap(true);
+        c.drawBitmap(bigImage,null,mapFrame,p);
+        for(int i=0;i<WarpPoint.ALL.size();i++) {
+            WarpPoint point=WarpPoint.ALL.get(i);
+            float mx=mapX(point.x),my=mapY(point.y);
+            p.setColor(0x55323e35);c.drawCircle(mx+1,my+2,8,p);
+            p.setColor(point.color);c.drawCircle(mx,my,i==selectedWarp?7:4.5f,p);
+            if(i==selectedWarp) {
+                p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(2);p.setColor(0xffffe6aa);
+                c.drawCircle(mx,my,11,p);p.setStyle(Paint.Style.FILL);
+            }
+            text(c,String.valueOf(i+1),mx-3,my+3,9,0xff273d3a,true);
+            text(c,point.name,mx+10,my-8,10,0xffffefd0,false);
+        }
+        if(mapFrame.contains(mapX(playerX),mapY(playerY))) {
+            float mx=mapX(playerX),my=mapY(playerY);
+            p.setColor(0xfffcf7db);c.drawCircle(mx,my,3,p);
+            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(1.5f);
+            c.drawCircle(mx,my,13,p);p.setStyle(Paint.Style.FILL);
+        }
+        text(c,"◇ 旅の門     ◎ あなた    ·    門はミニマップにも表示されます",
+                45,sh-63,10,0xffd4d8bb,false);
+        text(c,"THE SEVEN CHAPTERS",sw-326,108,10,0xffb2c4b8,true);
+        float rowH=(sh-208)/7f;
+        for(int i=0;i<WarpPoint.ALL.size();i++) {
+            WarpPoint point=WarpPoint.ALL.get(i);
+            float y=118+i*rowH;
+            if(i==selectedWarp) {
+                p.setColor(0x80597565);c.drawRoundRect(sw-331,y,sw-39,y+rowH-4,8,8,p);
+            }
+            p.setColor(point.color);c.drawCircle(sw-312,y+16,5,p);
+            text(c,(i+1)+"  "+point.name,sw-296,y+18,14,0xfff5e5bf,true);
+            text(c,point.description,sw-296,y+32,10,0xffbdcfc3,false);
+        }
+        panel(c,sw-331,sh-78,sw-39,sh-36,10);
+        text(c,"この門へワープ  →",sw-287,sh-51,17,0xffffe2a2,true);
         c.restore();
     }
 
-    private void marker(Canvas c,RectF frame,float x,float y,int color,String title) {
-        float mx=frame.centerX()+(x-bigX)/2816f*frame.width();
-        float my=frame.centerY()+(y-bigY)/1584f*frame.height();
-        if(mx<frame.left+5 || mx>frame.right-5 || my<frame.top+5 || my>frame.bottom-5)return;
-        p.setColor(color);c.drawCircle(mx,my,3.5f,p);
-        text(c,title,mx+5,my-4,9,0xffffebcc,false);
+    private float mapX(float x) { return mapFrame.left+(x+105)/224f*mapFrame.width(); }
+    private float mapY(float y) { return mapFrame.top+(y+68)/156.8f*mapFrame.height(); }
+
+    private void mapTouch(float x,float y,float sw,float sh) {
+        if(x>sw-80 && y<85) { mapOpen=false;clearInput();return; }
+        float rowH=(sh-208)/7f;
+        if(x>=sw-331 && x<=sw-39 && y>=118 && y<118+rowH*7) {
+            selectedWarp=Math.min(6,(int)((y-118)/rowH));
+        } else if(x>=sw-331 && x<=sw-39 && y>=sh-78 && y<=sh-36) {
+            if(travel.start(selectedWarp)) { mapOpen=false;clearInput(); }
+        } else if(mapFrame.contains(x,y)) {
+            float best=25*25;
+            for(int i=0;i<WarpPoint.ALL.size();i++) {
+                WarpPoint point=WarpPoint.ALL.get(i);
+                float dx=x-mapX(point.x),dy=y-mapY(point.y),distance=dx*dx+dy*dy;
+                if(distance<best) { best=distance;selectedWarp=i; }
+            }
+        }
     }
 
     @Override public boolean onTouchEvent(MotionEvent event) {
@@ -327,16 +451,11 @@ public final class GameView extends View {
         float y=event.getY(event.getActionIndex())/uiScale;
         float sw=getWidth()/uiScale,sh=getHeight()/uiScale;
         int action=event.getActionMasked(), pointer=event.getPointerId(event.getActionIndex());
+        if(travel.active()) { clearInput();return true; }
         if(action==MotionEvent.ACTION_DOWN || action==MotionEvent.ACTION_POINTER_DOWN) {
-            if(mapOpen) {
-                mapOpen=false;
-                return true;
-            }
-            if(x>sw-204 && y<168) {
-                mapOpen=true;
-                joystickX=joystickY=0; sprint=false;
-                stickPointer=runPointer=-1;
-                return true;
+            if(mapOpen) { mapTouch(x,y,sw,sh);return true; }
+            if((x>sw-204 && y<168) || (x>=15 && x<=205 && y>=98 && y<=139)) {
+                openMap();return true;
             }
             if(x>sw-66 && y>sh*.42f-47 && y<sh*.42f+82) {
                 zoom=clamp(zoom+(y<sh*.42f+16?.13f:-.13f),.62f,1.55f);
@@ -351,6 +470,7 @@ public final class GameView extends View {
                 runPointer=pointer;sprint=true;return true;
             }
         } else if(action==MotionEvent.ACTION_MOVE) {
+            if(mapOpen)return true;
             if(stickPointer!=-1) {
                 int index=event.findPointerIndex(stickPointer);
                 if(index>=0)setStick(event.getX(index)/uiScale,event.getY(index)/uiScale,sh);
@@ -376,3 +496,4 @@ public final class GameView extends View {
         joystickY=dy/57;
     }
 }
+
