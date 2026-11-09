@@ -56,6 +56,7 @@ jobs:
             adb pull /sdcard/Android/data/jp.tanuki.fablewind/files/qa qa || true
             mkdir -p qa
             adb logcat -d -s Fablewind3D FablewindSmoke AndroidRuntime > qa/runtime.log
+            cat qa/runtime.log
             grep -q 'result=PASS' /tmp/fablewind-smoke.txt
       - name: Read native visual previews
         if: always()

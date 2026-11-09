@@ -43,7 +43,11 @@ public final class SmokeInstrumentation extends Instrumentation {
             result.putString("result","PASS");result.putString("models",String.valueOf(view.testModels()));
             result.putString("coverage","EGL shader + 54 GLBs + 7 regions + interior + night + crafting/map touch + screenshots");
             finish(Activity.RESULT_OK,result);
-        }catch(Throwable e){android.util.Log.e("FablewindSmoke","FAIL",e);result.putString("result","FAIL");result.putString("error",e.toString());finish(Activity.RESULT_CANCELED,result);}
+        }catch(Throwable e){
+            for(java.util.Map.Entry<Thread,StackTraceElement[]> entry:Thread.getAllStackTraces().entrySet())
+                if(entry.getKey().getName().contains("GLThread") || entry.getKey().getName().equals("main"))
+                    android.util.Log.e("FablewindSmoke",entry.getKey().getName()+" "+java.util.Arrays.toString(entry.getValue()));
+            android.util.Log.e("FablewindSmoke","FAIL",e);result.putString("result","FAIL");result.putString("error",e.toString());finish(Activity.RESULT_CANCELED,result);}
     }
     private void awaitScene(float x,float z,String interior)throws InterruptedException{
         long frame=view.testFrames()+2,deadline=SystemClock.uptimeMillis()+45000;
@@ -52,7 +56,10 @@ public final class SmokeInstrumentation extends Instrumentation {
             if(view.testFrames()>=frame && s!=null && s.x==x && s.z==z && java.util.Objects.equals(s.interior,interior) && h!=null && h.x==x && h.z==z && java.util.Objects.equals(h.interior,interior)){view.testSyncFrame();waitForIdleSync();SystemClock.sleep(200);return;}
             SystemClock.sleep(100);
         }
-        throw new AssertionError("Timed out waiting for rendered scene "+x+","+z);
+        SurvivalGame.Snapshot s=view.testSnapshot(),h=view.testHudSnapshot();
+        throw new AssertionError("Timed out scene "+x+","+z+" frames="+view.testFrames()+
+                " GL="+(s==null?"null":s.x+","+s.z+","+s.interior)+
+                " HUD="+(h==null?"null":h.x+","+h.z+","+h.interior)+" error="+view.testError());
     }
     private void tap(float x,float y){
         int[] origin=new int[2];view.getLocationOnScreen(origin);x+=origin[0];y+=origin[1];
