@@ -23,8 +23,11 @@ public final class GameView extends FrameLayout {
     private volatile int loadedModels,triangles;
     private volatile long renderedFrames;
     private boolean active;
+    private final Object overlayLock=new Object();
+    private Bitmap overlayBitmap;
+    private final android.os.Handler uiHandler=new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable hudTicker=new Runnable(){public void run(){
-        if(active){hud.invalidate();hud.postDelayed(this,33);}
+        if(active){rasterHud();surface.requestRender();uiHandler.postDelayed(this,33);}
     }};
     private static final String PLAY="play",CRAFT="craft",BAG="bag",MAP="map",HELP="help";
     private volatile String menu=PLAY;private int recipeCategory,recipePage,selectedRecipe,selectedWarp;
@@ -47,11 +50,26 @@ public final class GameView extends FrameLayout {
         renderer=new SceneRenderer(context,game,input,new SceneRenderer.Listener(){
             public void ready(SurvivalGame.Snapshot s,String error,int models,int tris){snapshot=s;renderError=error;loadedModels=models;triangles=tris;renderedFrames++;}
             public void save(){saveGame();}
+            public void overlay(){synchronized(overlayLock){if(overlayBitmap!=null)renderer.drawHud(overlayBitmap);}}
         });
         surface.setRenderer(renderer);surface.setRenderMode(GLSurfaceView.RENDERMODE_WHEN_DIRTY);addView(surface,new LayoutParams(-1,-1));hud=new Hud(context);addView(hud,new LayoutParams(-1,-1));
+        hud.setVisibility(View.INVISIBLE);
+        surface.setOnTouchListener((v,event)->hud.onTouchEvent(event));
+        setBackgroundColor(0xff182d35);
         setFocusableInTouchMode(true);
     }
 
+    private void rasterHud(){
+        int w=getWidth(),h=getHeight();if(w<=0||h<=0)return;
+        float factor=Math.min(1,1280f/w);int bw=Math.max(1,Math.round(w*factor)),bh=Math.max(1,Math.round(h*factor));
+        synchronized(overlayLock){
+            if(overlayBitmap==null || overlayBitmap.getWidth()!=bw || overlayBitmap.getHeight()!=bh){
+                if(overlayBitmap!=null)overlayBitmap.recycle();overlayBitmap=Bitmap.createBitmap(bw,bh,Bitmap.Config.ARGB_8888);
+            }
+            Canvas canvas=new Canvas(overlayBitmap);canvas.drawColor(Color.TRANSPARENT,PorterDuff.Mode.CLEAR);
+            canvas.scale(factor,factor);hud.onDraw(canvas);
+        }
+    }
     SurvivalGame.Snapshot testHudSnapshot(){return hudSnapshot;}
     void testSyncFrame()throws InterruptedException{
         java.util.concurrent.CountDownLatch complete=new java.util.concurrent.CountDownLatch(1);
@@ -65,8 +83,8 @@ public final class GameView extends FrameLayout {
     SurvivalGame testGame(){return game;}
     int testModels(){return loadedModels;}
     String testError(){return renderError;}
-    public void pause(){active=false;hud.removeCallbacks(hudTicker);input.clear();synchronized(game){game.paused=true;}saveGame();surface.onPause();}
-    public void resume(){active=true;input.clear();synchronized(game){game.paused=false;}surface.onResume();surface.requestRender();hud.removeCallbacks(hudTicker);hud.post(hudTicker);hud.invalidate();}
+    public void pause(){active=false;uiHandler.removeCallbacks(hudTicker);input.clear();synchronized(game){game.paused=true;}saveGame();surface.onPause();}
+    public void resume(){active=true;input.clear();synchronized(game){game.paused=false;}surface.onResume();surface.requestRender();uiHandler.removeCallbacks(hudTicker);uiHandler.post(hudTicker);hud.invalidate();}
     private synchronized void saveGame(){
         if(saveError.startsWith("セーブを保護"))return;
         FileOutputStream out=null;
@@ -118,7 +136,7 @@ public final class GameView extends FrameLayout {
             if(!saveError.isEmpty())text(c,saveError,20,sh-12,11,0xffffb89d,false);
             if(!renderError.isEmpty()){panel(c,25,145,sw-25,sh-30,0xf02c3036);text(c,renderError,45,185,15,0xffffb9a1,false);}
             if(s.fade>0){p.setColor(Color.argb((int)(255*s.fade),18,30,39));c.drawRect(0,0,sw,sh,p);}
-            hudSnapshot=s;c.restore();if(active)surface.requestRender();
+            hudSnapshot=s;c.restore();
         }
         private void drawControls(Canvas c,SurvivalGame.Snapshot s){
             float jx=103,jy=sh-95;p.setColor(0x55516b65);c.drawCircle(jx,jy,65,p);p.setColor(0x55d1d5b2);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(2);c.drawCircle(jx,jy,63,p);p.setStyle(Paint.Style.FILL);p.setColor(0xcce6dfbd);c.drawCircle(jx+joyX*42,jy+joyY*42,24,p);

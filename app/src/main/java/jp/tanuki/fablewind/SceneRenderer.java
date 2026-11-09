@@ -15,11 +15,12 @@ import javax.microedition.khronos.opengles.GL10;
 
 /** Actual GLB geometry on OpenGL ES 2.0; Canvas is used only for the touch HUD. */
 public final class SceneRenderer implements GLSurfaceView.Renderer {
-    public interface Listener {void ready(SurvivalGame.Snapshot snapshot,String error,int models,int triangles);void save();}
+    public interface Listener {void ready(SurvivalGame.Snapshot snapshot,String error,int models,int triangles);void save();void overlay();}
     private final Context context;private final SurvivalGame game;private final SurvivalGame.Input input;private final Listener listener;
     private final Map<String,GpuMesh> models=new HashMap<>();
     private final float[] projection=new float[16],view=new float[16],vp=new float[16],model=new float[16];
     private int program,texture,position,normal,uv,color,surface,rig,uModel,uVP,uEye,uFog,uDay,uTime,uAlpha,uMode,uMotion;
+    private int hudProgram,hudTexture,hudBuffer,hudPosition,hudUV,hudSampler,hudWidth,hudHeight;
     private int width,height,modelTriangles;private GpuMesh terrain,shadow;
     private int terrainX=Integer.MIN_VALUE,terrainZ=Integer.MIN_VALUE;private long last;private float saveTimer;
     private String error="";private float eyeX,eyeY,eyeZ;private SurvivalGame.Snapshot scene;
@@ -29,6 +30,7 @@ public final class SceneRenderer implements GLSurfaceView.Renderer {
     @Override public void onSurfaceCreated(GL10 gl,EGLConfig config){
         models.clear();terrain=null;shadow=null;terrainX=Integer.MIN_VALUE;last=0;modelTriangles=0;error="";
         try{
+            initializeHudGpu();
             program=link(text("shaders/world.vert"),text("shaders/world.frag"));
             position=GLES20.glGetAttribLocation(program,"aPosition");normal=GLES20.glGetAttribLocation(program,"aNormal");uv=GLES20.glGetAttribLocation(program,"aUV");color=GLES20.glGetAttribLocation(program,"aColor");surface=GLES20.glGetAttribLocation(program,"aSurface");rig=GLES20.glGetAttribLocation(program,"aRig");
             uModel=uniform("uModel");uVP=uniform("uViewProjection");uEye=uniform("uEye");uFog=uniform("uFog");uDay=uniform("uDay");uTime=uniform("uTime");uAlpha=uniform("uAlpha");uMode=uniform("uMode");uMotion=uniform("uMotion");
@@ -54,7 +56,7 @@ public final class SceneRenderer implements GLSurfaceView.Renderer {
         synchronized(game){game.update(dt,input);scene=game.snapshot();}
         boolean requested; synchronized(game){requested=game.saveRequested;game.saveRequested=false;}
         if((saveTimer+=dt)>10 || requested){saveTimer=0;listener.save();}
-        if(!error.isEmpty()){GLES20.glClearColor(.08f,.13f,.18f,1);GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT|GLES20.GL_DEPTH_BUFFER_BIT);listener.ready(scene,error,models.size(),modelTriangles);return;}
+        if(!error.isEmpty()){GLES20.glClearColor(.08f,.13f,.18f,1);GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT|GLES20.GL_DEPTH_BUFFER_BIT);listener.overlay();listener.ready(scene,error,models.size(),modelTriangles);return;}
         float day=(float)Math.max(.08,Math.min(1,.28+Math.sin(scene.phase*Math.PI*2/700)*.9));
         float fogR=.10f+day*.46f,fogG=.14f+day*.57f,fogB=.24f+day*.47f;
         GLES20.glClearColor(fogR,fogG,fogB,1);GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT|GLES20.GL_DEPTH_BUFFER_BIT);
@@ -73,9 +75,36 @@ public final class SceneRenderer implements GLSurfaceView.Renderer {
         GLES20.glUniform3f(uMotion,(float)(scene.time%10000),0,0);
         if(scene.sword)draw("sword",scene.x+(float)Math.cos(Math.toRadians(scene.yaw))*.27f,ground+.35f,scene.z-(float)Math.sin(Math.toRadians(scene.yaw))*.27f,scene.yaw+scene.attack*180,.65f,1);
         if(scene.shield)draw("shield",scene.x-(float)Math.cos(Math.toRadians(scene.yaw))*.27f,ground+.28f,scene.z+(float)Math.sin(Math.toRadians(scene.yaw))*.27f,scene.yaw+(scene.guarding?0:90),.55f,1);
+        listener.overlay();
         int glError=GLES20.glGetError();if(glError!=GLES20.GL_NO_ERROR)error="OpenGL error 0x"+Integer.toHexString(glError);
         listener.ready(scene,error,models.size(),modelTriangles);
     }
+    /** HUD and world share one EGL context; no separately animated View layer can stall. */
+    private void initializeHudGpu()throws IOException{
+        hudProgram=link("attribute vec2 p;attribute vec2 t;varying vec2 uv;void main(){uv=t;gl_Position=vec4(p,0.0,1.0);}",
+                "precision mediump float;uniform sampler2D image;varying vec2 uv;void main(){gl_FragColor=texture2D(image,uv);}");
+        hudPosition=GLES20.glGetAttribLocation(hudProgram,"p");hudUV=GLES20.glGetAttribLocation(hudProgram,"t");hudSampler=GLES20.glGetUniformLocation(hudProgram,"image");
+        float[] quad={-1,1,0,0,-1,-1,0,1,1,1,1,0,1,1,1,0,-1,-1,0,1,1,-1,1,1};
+        FloatBuffer data=ByteBuffer.allocateDirect(quad.length*4).order(ByteOrder.nativeOrder()).asFloatBuffer();data.put(quad).position(0);
+        int[] id=new int[1];GLES20.glGenBuffers(1,id,0);hudBuffer=id[0];GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER,hudBuffer);GLES20.glBufferData(GLES20.GL_ARRAY_BUFFER,quad.length*4,data,GLES20.GL_STATIC_DRAW);
+        GLES20.glGenTextures(1,id,0);hudTexture=id[0];GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,hudTexture);
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_MIN_FILTER,GLES20.GL_LINEAR);GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_MAG_FILTER,GLES20.GL_LINEAR);
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_WRAP_S,GLES20.GL_CLAMP_TO_EDGE);GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_WRAP_T,GLES20.GL_CLAMP_TO_EDGE);hudWidth=hudHeight=0;
+    }
+    void drawHud(Bitmap bitmap){
+        if(hudProgram==0)return;
+        GLES20.glUseProgram(hudProgram);GLES20.glActiveTexture(GLES20.GL_TEXTURE0);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,hudTexture);
+        if(hudWidth!=bitmap.getWidth() || hudHeight!=bitmap.getHeight()){
+            GLUtils.texImage2D(GLES20.GL_TEXTURE_2D,0,bitmap,0);hudWidth=bitmap.getWidth();hudHeight=bitmap.getHeight();
+        }else GLUtils.texSubImage2D(GLES20.GL_TEXTURE_2D,0,0,0,bitmap);
+        GLES20.glUniform1i(hudSampler,0);GLES20.glDisable(GLES20.GL_DEPTH_TEST);GLES20.glDepthMask(false);
+        GLES20.glEnable(GLES20.GL_BLEND);GLES20.glBlendFunc(GLES20.GL_ONE,GLES20.GL_ONE_MINUS_SRC_ALPHA);
+        for(int a:new int[]{position,normal,uv,color,surface,rig})if(a>=0)GLES20.glDisableVertexAttribArray(a);
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER,hudBuffer);attrib(hudPosition,2,16,0);attrib(hudUV,2,16,8);GLES20.glDrawArrays(GLES20.GL_TRIANGLES,0,6);
+        GLES20.glDisableVertexAttribArray(hudPosition);GLES20.glDisableVertexAttribArray(hudUV);
+        GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA,GLES20.GL_ONE_MINUS_SRC_ALPHA);GLES20.glDepthMask(true);GLES20.glEnable(GLES20.GL_DEPTH_TEST);
+    }
+
     private void pointLights(){
         java.util.List<float[]> lights=new java.util.ArrayList<>();
         if(scene.interior!=null){lights.add(new float[]{-2.4f,1.1f,-2.8f,2.2f});lights.add(new float[]{0,2.3f,0,1.3f});}
