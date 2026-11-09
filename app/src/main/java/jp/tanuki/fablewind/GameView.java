@@ -28,13 +28,14 @@ public final class GameView extends View {
     private float uiScale = 1;
     private Bitmap miniImage, bigImage;
     private int miniX = Integer.MIN_VALUE, miniY = Integer.MIN_VALUE;
-    private int bigX = Integer.MIN_VALUE, bigY = Integer.MIN_VALUE;
     private float saveCountdown;
     private String lastPlace = "";
     private final WarpTravel travel = new WarpTravel();
     private int selectedWarp;
     private float arrivalNotice;
     private final RectF mapFrame = new RectF();
+    private World.Tile[] frameTiles = new World.Tile[0];
+    private int frameLeft, frameTop, frameColumns;
 
     public GameView(Context context) {
         super(context);
@@ -69,13 +70,17 @@ public final class GameView extends View {
 
     @Override protected void onDraw(Canvas c) {
         super.onDraw(c);
-        int width = getWidth(), height = getHeight();
-        if (width == 0 || height == 0) return;
+        int displayWidth = getWidth(), displayHeight = getHeight();
+        if (displayWidth == 0 || displayHeight == 0) return;
+        uiScale=clamp(Math.min(displayWidth/910f,displayHeight/510f),.65f,2.45f);
+        // Keep the world scale consistent across phone resolutions, just like the HUD.
+        int width=Math.round(displayWidth/uiScale),height=Math.round(displayHeight/uiScale);
         long now = System.nanoTime();
         float dt = lastFrame == 0 ? .016f : clamp((now-lastFrame) / 1_000_000_000f,0f,.05f);
         lastFrame = now;
         if (!paused) update(dt);
 
+        c.save();c.scale(uiScale,uiScale);
         // The screen is rendered as a field of depth-sorted extruded 2D diamond tiles.
         c.drawColor(0xffa0cfca);
         float w = 42f*zoom, h = 21f*zoom, groundLift = 11f*zoom;
@@ -95,6 +100,7 @@ public final class GameView extends View {
         }
         int minX=(int)Math.floor(xMin)-8, maxX=(int)Math.ceil(xMax)+8;
         int minY=(int)Math.floor(yMin)-8, maxY=(int)Math.ceil(yMax)+8;
+        cacheFrame(minX-1,minY-1,maxX+1,maxY+1);
         int playerLayer = (int)Math.floor(playerX+playerY);
         boolean playerDrawn = false;
         // Terrain first; props and traveler then share one painter's depth order.
@@ -108,7 +114,7 @@ public final class GameView extends View {
                     float approxY=centerY+(x+y-cameraX-cameraY)*h;
                     if(screenX < -230*zoom || screenX > width+230*zoom ||
                             approxY < -250*zoom || approxY > height+350*zoom) continue;
-                    World.Tile tile=world.tile(x,y);
+                    World.Tile tile=frameTile(x,y);
                     float screenY=approxY-(tile.height-focusHeight)*groundLift;
                     if(pass==0) {
                         Art.ground(c,p,path,tile,screenX,screenY,w,h,
@@ -146,11 +152,12 @@ public final class GameView extends View {
         }
         drawAtmosphere(c,width,height,sun);
         drawFireflies(c,width,height,sun);
-        drawHud(c,width,height);
-        if (mapOpen) drawLargeMap(c,width,height);
+        c.restore();
+        drawHud(c,displayWidth,displayHeight);
+        if (mapOpen) drawLargeMap(c,displayWidth,displayHeight);
         if(travel.active()) {
             p.setColor(Color.argb((int)(travel.opacity()*255),27,42,48));
-            c.drawRect(0,0,width,height,p);
+            c.drawRect(0,0,displayWidth,displayHeight,p);
         }
         if (!paused) postInvalidateOnAnimation();
     }
@@ -186,9 +193,21 @@ public final class GameView extends View {
         }
     }
 
+    private void cacheFrame(int left,int top,int right,int bottom) {
+        frameLeft=left;frameTop=top;frameColumns=right-left+1;
+        int count=frameColumns*(bottom-top+1);
+        if(frameTiles.length<count)frameTiles=new World.Tile[count];
+        for(int y=top;y<=bottom;y++)for(int x=left;x<=right;x++)
+            frameTiles[(y-top)*frameColumns+x-left]=world.tile(x,y);
+    }
+
+    private World.Tile frameTile(int x,int y) {
+        return frameTiles[(y-frameTop)*frameColumns+x-frameLeft];
+    }
+
     private float vertexHeight(int x,int y) {
-        return (world.tile(x,y).height+world.tile(x-1,y).height+
-                world.tile(x,y-1).height+world.tile(x-1,y-1).height)*.25f;
+        return (frameTile(x,y).height+frameTile(x-1,y).height+
+                frameTile(x,y-1).height+frameTile(x-1,y-1).height)*.25f;
     }
 
     private void clearInput() {
@@ -337,6 +356,7 @@ public final class GameView extends View {
             miniImage=Bitmap.createBitmap(72,56,Bitmap.Config.RGB_565);
             Canvas mc=new Canvas(miniImage);
             p.setStyle(Paint.Style.FILL);
+            p.setStrokeWidth(1);
             for(int y=0;y<56;y++)
                 for(int x=0;x<72;x++) {
                     World.Tile t=world.preview(miniX+(x-36)*3,miniY+(y-28)*3);

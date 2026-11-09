@@ -229,7 +229,7 @@ public final class World {
                 if(x==point.x && y==point.y) object=WARP;
             }
         }
-        if(road && biome==WATER) height=.65f;
+        if(biome==WATER) height=road?.65f:.45f;
         // Additional unique discoveries scattered over the enormous map.
         if (x == gx * 160 + 59 && y == gy * 160 - 63
                 && (hash(gx, gy, 681) & 3) == 1) object = CASTLE;

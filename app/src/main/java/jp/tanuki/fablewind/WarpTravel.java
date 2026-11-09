@@ -15,7 +15,9 @@ public final class WarpTravel {
 
     public boolean active() { return destination >= 0; }
     public float opacity() {
-        return active() ? Math.max(0,1-Math.abs(elapsed/DURATION*2-1)) : 0;
+        // Hold a fully opaque interval so frame timing cannot expose the teleport.
+        return active() ? Math.max(0,Math.min(1,
+                Math.min(elapsed/.32f,(DURATION-elapsed)/.32f))) : 0;
     }
 
     public WarpPoint update(float dt) {

@@ -34,6 +34,11 @@ public final class WorldTravelTest {
         check(travel.update(-1)==null,"ignore negative delta");
         check(travel.update(2)==WarpPoint.ALL.get(2) && !travel.active(),"long frame delivers once");
         check(travel.update(2)==null,"long frame no duplicate");
+        WarpTravel timed=new WarpTravel();timed.start(0);
+        for(int frame=0;frame<30;frame++) {
+            WarpPoint arrival=timed.update(1f/30);
+            if(arrival!=null)check(timed.opacity()==1f,"teleport hidden at 30 fps");
+        }
         check(world.tile(42,-40).object==World.CASTLE,"castle retained");
         check(world.tile(27,32).object==World.WINDMILL,"windmill retained");
         check(world.tile(-38,45).object==World.TOWER,"lighthouse retained");
