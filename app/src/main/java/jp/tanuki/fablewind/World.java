@@ -127,10 +127,10 @@ public final class World {
         int object = NONE;
         int chance = Math.floorMod(hash(x, y, 55), 100);
         if (village && !road) {
-            if (villageDistance > 4 && villageDistance < 13 && chance < 23)
-                object = (chance < 3) ? INN : HOUSE;
-            else if (chance < 34) object = TREE;
-            else if (chance < 51) object = FLOWER;
+            if (villageDistance > 4 && villageDistance < 13 && chance < 14)
+                object = (chance < 2) ? INN : HOUSE;
+            else if (chance < 23) object = TREE;
+            else if (chance < 39) object = FLOWER;
         } else if (!road && biome != WATER) {
             if (biome == FOREST && chance < 29) object = TREE;
             else if (biome == AUTUMN && chance < 24) object = TREE;
