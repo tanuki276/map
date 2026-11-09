@@ -21,6 +21,7 @@ public final class GameView extends FrameLayout {
     private volatile SurvivalGame.Snapshot snapshot;
     private volatile String renderError="",saveError="";
     private volatile int loadedModels,triangles;
+    private volatile long renderedFrames;
     private boolean active;
     private static final String PLAY="play",CRAFT="craft",BAG="bag",MAP="map",HELP="help";
     private String menu=PLAY;private int recipeCategory,recipePage,selectedRecipe,selectedWarp;
@@ -41,12 +42,14 @@ public final class GameView extends FrameLayout {
         loaded.ensureSafeSpawn();game=loaded;snapshot=game.snapshot();
         surface=new GLSurfaceView(context);surface.setEGLContextClientVersion(2);surface.setEGLConfigChooser(8,8,8,0,16,0);surface.setPreserveEGLContextOnPause(true);
         renderer=new SceneRenderer(context,game,input,new SceneRenderer.Listener(){
-            public void ready(SurvivalGame.Snapshot s,String error,int models,int tris){snapshot=s;renderError=error;loadedModels=models;triangles=tris;}
+            public void ready(SurvivalGame.Snapshot s,String error,int models,int tris){snapshot=s;renderError=error;loadedModels=models;triangles=tris;renderedFrames++;}
             public void save(){saveGame();}
         });
         surface.setRenderer(renderer);addView(surface,new LayoutParams(-1,-1));hud=new Hud(context);addView(hud,new LayoutParams(-1,-1));
         setFocusableInTouchMode(true);
     }
+    SurvivalGame.Snapshot testSnapshot(){return snapshot;}
+    long testFrames(){return renderedFrames;}
     SurvivalGame testGame(){return game;}
     int testModels(){return loadedModels;}
     String testError(){return renderError;}

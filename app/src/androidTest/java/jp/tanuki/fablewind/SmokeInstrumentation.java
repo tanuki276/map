@@ -27,13 +27,13 @@ public final class SmokeInstrumentation extends Instrumentation {
             for(int i=0;i<7;i++){
                 WarpPoint point=WarpPoint.ALL.get(i);
                 synchronized(game){game.paused=true;game.interior=null;game.x=point.x;game.z=point.y;game.time=144;}
-                SystemClock.sleep(600);capture("region-"+i);
+                awaitScene(point.x,point.y,null);capture("region-"+i);
                 check(view.testError().isEmpty(),"GL error in region "+i+": "+view.testError());
             }
             synchronized(game){game.interior="instrumented-room";game.x=0;game.z=2;}
-            SystemClock.sleep(500);capture("interior");
+            awaitScene(0,2,"instrumented-room");capture("interior");
             synchronized(game){game.interior=null;game.x=68;game.z=22;game.time=500;game.paused=false;SurvivalGame.Input input=new SurvivalGame.Input();for(int n=0;n<200;n++)game.update(.1f,input);game.paused=true;}
-            SystemClock.sleep(500);capture("night");
+            awaitScene(68,22,null);capture("night");
             // Real touch events open and close the crafting modal.
             float scale=Math.min(view.getWidth()/960f,view.getHeight()/540f),sw=view.getWidth()/scale;
             tap((sw-275)*scale,35*scale);SystemClock.sleep(300);capture("craft");
@@ -45,7 +45,21 @@ public final class SmokeInstrumentation extends Instrumentation {
             finish(Activity.RESULT_OK,result);
         }catch(Throwable e){android.util.Log.e("FablewindSmoke","FAIL",e);result.putString("result","FAIL");result.putString("error",e.toString());finish(Activity.RESULT_CANCELED,result);}
     }
-    private void tap(float x,float y){long now=SystemClock.uptimeMillis();MotionEvent down=MotionEvent.obtain(now,now,0,x,y,0),up=MotionEvent.obtain(now,now+50,1,x,y,0);sendPointerSync(down);sendPointerSync(up);down.recycle();up.recycle();waitForIdleSync();}
+    private void awaitScene(float x,float z,String interior){
+        long frame=view.testFrames()+2,deadline=SystemClock.uptimeMillis()+45000;
+        while(SystemClock.uptimeMillis()<deadline){
+            SurvivalGame.Snapshot s=view.testSnapshot();
+            if(view.testFrames()>=frame && s!=null && s.x==x && s.z==z && java.util.Objects.equals(s.interior,interior)){waitForIdleSync();return;}
+            SystemClock.sleep(100);
+        }
+        throw new AssertionError("Timed out waiting for rendered scene "+x+","+z);
+    }
+    private void tap(float x,float y){
+        int[] origin=new int[2];view.getLocationOnScreen(origin);x+=origin[0];y+=origin[1];
+        long now=SystemClock.uptimeMillis();MotionEvent down=MotionEvent.obtain(now,now,0,x,y,0),up=MotionEvent.obtain(now,now+50,1,x,y,0);
+        check(getUiAutomation().injectInputEvent(down,true),"touch down");check(getUiAutomation().injectInputEvent(up,true),"touch up");
+        down.recycle();up.recycle();waitForIdleSync();
+    }
     private void capture(String name)throws IOException{
         Bitmap b=getUiAutomation().takeScreenshot();check(b!=null,"screenshot "+name);
         File dir=new File(getTargetContext().getExternalFilesDir(null),"qa");if(!dir.exists()&&!dir.mkdirs())throw new IOException("QA directory");
