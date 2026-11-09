@@ -55,6 +55,9 @@ public final class World {
                     Math.floorMod(x, CHUNK_SIZE)];
     }
 
+    /** Lightweight sampling for overview maps; avoids generating distant chunks. */
+    public Tile preview(int x, int y) { return generate(x,y); }
+
     public String placeName(float x, float y) {
         if (distance(x, y, 0, 0) < 19) return "ひだまりの村";
         if (distance(x, y, 42, -40) < 18) return "風鳴りの古城";
