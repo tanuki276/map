@@ -6,6 +6,12 @@ on:
     paths-ignore:
       - 'apk/**'
       - 'README.md'
+      - 'art/**'
+  pull_request:
+    paths-ignore:
+      - 'apk/**'
+      - 'README.md'
+      - 'art/**'
   workflow_dispatch:
 
 permissions:
@@ -25,7 +31,50 @@ jobs:
         with:
           gradle-version: '8.10.2'
       - name: Build APK
-        run: gradle --no-daemon --stacktrace assembleDebug
+        run: gradle --no-daemon --stacktrace assembleDebug assembleDebugAndroidTest
+      - name: Check world and warp travel
+        run: sh scripts/check-world.sh
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Test actual GLB renderer on Android
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          arch: x86_64
+          target: default
+          profile: pixel_2
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            adb shell settings put secure immersive_mode_confirmations confirmed
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            adb shell am instrument -w jp.tanuki.fablewind.test/jp.tanuki.fablewind.SmokeInstrumentation | tee /tmp/fablewind-smoke.txt
+            adb pull /sdcard/Android/data/jp.tanuki.fablewind/files/qa qa || true
+            mkdir -p qa
+            adb logcat -d -s Fablewind3D FablewindSmoke AndroidRuntime > qa/runtime.log
+            cat qa/runtime.log
+            grep -q 'result=PASS' /tmp/fablewind-smoke.txt
+      - name: Read native visual previews
+        if: always()
+        run: |
+          python - <<'PY'
+          import base64
+          from pathlib import Path
+          for name in ['region-0', 'region-5', 'interior', 'night', 'craft']:
+              path=Path('qa')/(name+'.jpg')
+              if path.exists():
+                  print('FABLE_NATIVE_PREVIEW_'+name+' '+base64.b64encode(path.read_bytes()).decode())
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Fablewind-3D-Android-QA
+          path: qa/
+          if-no-files-found: ignore
       - name: Copy APK
         run: |
           mkdir -p apk
@@ -36,6 +85,7 @@ jobs:
           path: apk/Fablewind-debug.apk
           retention-days: 30
       - name: Commit APK to repository
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -44,3 +94,4 @@ jobs:
             git commit -m "build: publish Android debug APK [skip ci]"
             git push
           fi
+

@@ -13,14 +13,16 @@ public final class World {
             MOUNTAIN = 4, SNOW = 5, WATER = 6, TOWN = 7;
     public static final int NONE = 0, TREE = 1, PINE = 2, HOUSE = 3, ROCK = 4,
             FLOWER = 5, CASTLE = 6, WINDMILL = 7, TOWER = 8, RUINS = 9,
-            SHRINE = 10, INN = 11;
+            SHRINE = 10, INN = 11, MUSHROOM = 12, CRYSTAL = 13,
+            LANTERN = 14, MARKET = 15, WELL = 16, GIANT_TREE = 17,
+            PUMPKIN = 18, WARP = 19;
 
     public static final class Tile {
         public final float height;
-        public final int biome, object, seed;
+        public final int biome, object, seed, region;
         public final boolean road, river, village;
         Tile(float height, int biome, int object, int seed,
-             boolean road, boolean river, boolean village) {
+             boolean road, boolean river, boolean village, int region) {
             this.height = height;
             this.biome = biome;
             this.object = object;
@@ -28,6 +30,7 @@ public final class World {
             this.road = road;
             this.river = river;
             this.village = village;
+            this.region = region;
         }
     }
 
@@ -59,11 +62,13 @@ public final class World {
     public Tile preview(int x, int y) { return generate(x,y); }
 
     public String placeName(float x, float y) {
+        int region = regionAt(x, y);
+        if (region >= 0) return WarpPoint.ALL.get(region).name;
         if (distance(x, y, 0, 0) < 19) return "ひだまりの村";
         if (distance(x, y, 42, -40) < 18) return "風鳴りの古城";
         if (distance(x, y, 27, 32) < 15) return "黄金の風車丘";
         if (distance(x, y, -38, 45) < 16) return "霧灯台";
-        if (distance(x, y, 72, 22) < 15) return "忘れられた遺跡";
+        if (distance(x, y, 72, 22) < 15) return "星降りの遺跡";
         Tile t = tile(Math.round(x), Math.round(y));
         if (t.village) return "街道沿いの集落";
         switch (t.biome) {
@@ -79,6 +84,26 @@ public final class World {
 
     private static float distance(float x, float y, float tx, float ty) {
         return (float) Math.hypot(x - tx, y - ty);
+    }
+
+    /** Authored regions sit inside the unbounded procedural world. */
+    public static int regionAt(float x, float y) {
+        int nearest = -1;
+        float best = Float.MAX_VALUE;
+        for (int i = 0; i < WarpPoint.ALL.size(); i++) {
+            WarpPoint point = WarpPoint.ALL.get(i);
+            float d = distance(x, y, point.x, point.y);
+            float edge=(i==0?20:25)+(float)(Math.sin(x*.13)+Math.cos(y*.17))*2;
+            if (d < edge && d < best) { best = d; nearest = i; }
+        }
+        return nearest;
+    }
+
+    private static float segmentDistance(float x, float y, float bx, float by) {
+        float t = clamp((x*bx+y*by)/(bx*bx+by*by), 0, 1);
+        float length=(float)Math.hypot(bx,by);
+        float bend=(float)Math.sin(t*Math.PI*2)*2.3f;
+        return distance(x,y,bx*t-by/length*bend,by*t+bx/length*bend);
     }
 
     private Tile generate(int x, int y) {
@@ -127,10 +152,11 @@ public final class World {
         int object = NONE;
         int chance = Math.floorMod(hash(x, y, 55), 100);
         if (village && !road) {
-            if (villageDistance > 4 && villageDistance < 13 && chance < 14)
+            if (villageDistance > 4 && villageDistance < 13 && chance < 70
+                    && Math.floorMod(x-vx,3)==0 && Math.floorMod(y-vy,3)==0)
                 object = (chance < 2) ? INN : HOUSE;
-            else if (chance < 23) object = TREE;
-            else if (chance < 39) object = FLOWER;
+            else if (chance < 8) object = TREE;
+            else if (chance < 13) object = FLOWER;
         } else if (!road && biome != WATER) {
             if (biome == FOREST && chance < 29) object = TREE;
             else if (biome == AUTUMN && chance < 24) object = TREE;
@@ -141,17 +167,75 @@ public final class World {
             else if (chance < 27 && (biome == MEADOW || biome == GOLDEN))
                 object = FLOWER;
         }
+        int region = regionAt(x,y);
+        // Each chapter has its own vegetation, palette and handmade points of interest.
+        if (region >= 0) {
+            switch (region) {
+                case 0: break;
+                case 1:
+                    biome = MEADOW;
+                    object = chance < 9 ? TREE : chance < 32 ? FLOWER : NONE;
+                    break;
+                case 2:
+                    biome = GOLDEN;
+                    object = chance < 3 ? TREE : NONE;
+                    break;
+                case 3:
+                    biome = river || (Math.sin(x*.19)+Math.cos(y*.24) > .45) ? WATER : MEADOW;
+                    object = biome == WATER ? NONE : chance < 9 ? TREE : chance < 18 ? ROCK : NONE;
+                    break;
+                case 4:
+                    biome = FOREST;
+                    object = chance < 12 ? TREE : chance < 21 ? CRYSTAL : chance < 27 ? ROCK : NONE;
+                    break;
+                case 5:
+                    biome = FOREST;
+                    object = chance < 16 ? TREE : chance < 30 ? MUSHROOM : chance < 34 ? CRYSTAL : NONE;
+                    break;
+                case 6:
+                    biome = AUTUMN;
+                    object = chance < 17 ? TREE : chance < 28 ? PUMPKIN : NONE;
+                    if (Math.floorMod(x,5)==0 && Math.floorMod(y,5)==0) object=HOUSE;
+                    break;
+            }
+        }
+        // Walkable, gently winding roads connect all authored chapters.
+        for (int i=1; i<WarpPoint.ALL.size(); i++) {
+            WarpPoint point=WarpPoint.ALL.get(i);
+            if(segmentDistance(x,y,point.x,point.y)<1.15f) road=true;
+        }
+        if (road) object = NONE;
+        if(distance(x,y,42,-40)<4 || distance(x,y,-38,45)<3 ||
+                distance(x,y,27,32)<3 || distance(x,y,72,22)<3) object=NONE;
         if (x == 42 && y == -40) object = CASTLE;
         if (x == 27 && y == 32) object = WINDMILL;
         if (x == -38 && y == 45) object = TOWER;
         if (x == 72 && y == 22) object = RUINS;
-        if (x == -45 && y == -37) object = SHRINE;
+        if (x == -45 && y == -38) object = GIANT_TREE;
+        if (x == -67 && y == 2) object = INN;
+        if (x == 4 && y == -4) object = WELL;
+        if ((x == -4 || x == 4) && y == 3) object = MARKET;
+        if ((x == -3 || x == 3) && (y == -2 || y == 5)) object = LANTERN;
+        // A flat, dry, clear arrival court surrounds every portal, even over rivers.
+        for (WarpPoint point : WarpPoint.ALL) {
+            float d=distance(x,y,point.x,point.y);
+            if (d < 4.3f) {
+                float blend=clamp((d-2f)/2.3f,0,1);
+                height=1.0f*(1-blend)+height*blend;
+                if (d < 2.8f) {
+                    if(biome==WATER) biome=MEADOW;
+                    river=false; road=true; object=NONE;
+                }
+                if(x==point.x && y==point.y) object=WARP;
+            }
+        }
+        if(biome==WATER) height=road?.65f:.45f;
         // Additional unique discoveries scattered over the enormous map.
         if (x == gx * 160 + 59 && y == gy * 160 - 63
                 && (hash(gx, gy, 681) & 3) == 1) object = CASTLE;
         if (x == gx * 160 - 49 && y == gy * 160 + 55
                 && (hash(gx, gy, 683) & 3) == 2) object = WINDMILL;
-        return new Tile(height, biome, object, salt, road, river, village);
+        return new Tile(height, biome, object, salt, road, river, village, region);
     }
 
     public static int hash(int x, int y, int seed) {
@@ -195,3 +279,4 @@ public final class World {
         return Math.max(lo, Math.min(hi, x));
     }
 }
+

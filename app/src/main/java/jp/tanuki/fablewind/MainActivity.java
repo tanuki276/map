@@ -25,6 +25,8 @@ public final class MainActivity extends Activity {
         setContentView(game);
     }
 
+    @Override public void onBackPressed(){if(game!=null)game.back();else super.onBackPressed();}
+
     @Override protected void onResume() {
         super.onResume();
         if(game!=null)game.resume();
@@ -34,3 +36,4 @@ public final class MainActivity extends Activity {
         super.onPause();
     }
 }
+
