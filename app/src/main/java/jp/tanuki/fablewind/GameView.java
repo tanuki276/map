@@ -34,7 +34,6 @@ public final class GameView extends View {
 
     public GameView(Context context) {
         super(context);
-        setLayerType(View.LAYER_TYPE_SOFTWARE, null);
         saves = context.getSharedPreferences("fablewind_world", Context.MODE_PRIVATE);
         playerX = saves.getFloat("x", 0);
         playerY = saves.getFloat("y", 0);
